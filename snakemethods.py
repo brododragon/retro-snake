@@ -3,36 +3,36 @@ import random
 import pygame
 import math
 
-def respawnApple(snake, appleRect, applePadding, gridSize, pixelsPerSquare):
+def respawnApple(game_state):
     while True:
-        appleRect.x = helper.gridToPixels(random.randint(0, gridSize - 1), pixelsPerSquare) + applePadding
-        appleRect.y = helper.gridToPixels(random.randint(0, gridSize - 1), pixelsPerSquare) + applePadding
+        game_state.appleRect.x = helper.gridToPixels(random.randint(0, game_state.gridSize - 1), game_state.pixelsPerSquare) + game_state.applePadding
+        game_state.appleRect.y = helper.gridToPixels(random.randint(0, game_state.gridSize - 1), game_state.pixelsPerSquare) + game_state.applePadding
 
-        if pygame.Rect.collidelist(appleRect, snake) == -1: # generate another apple position if this one is inside the snake
+        if pygame.Rect.collidelist(game_state.appleRect, game_state.snake) == -1:
             break
 
-def collectApple(snake, appleRect, applePadding, gridSize, pixelsPerSquare):
-    global score
-    score += 1
-    snake.append(snakeclasses.segment(snake, pixelsPerSquare))
-    respawnApple(snake, appleRect, applePadding, gridSize, pixelsPerSquare)
+def collectApple(game_state):
+    game_state.score += 1
+    game_state.snake.append(snakeclasses.segment(game_state))
+    respawnApple(game_state)
 
-def drawApple(canvas, APPLECOLOR, appleRect):
-    pygame.draw.rect(canvas, APPLECOLOR, appleRect)
+def drawApple(game_state):
+    pygame.draw.rect(game_state.canvas, game_state.APPLECOLOR, game_state.appleRect)
 
-def drawScore(x, retroFontSmall, TEXTCOLOR, canvas):
-    scoreText = retroFontSmall.render(f"Score: {x}", True, TEXTCOLOR)
-    canvas.blit(scoreText, scoreText.get_rect(topright = canvas.get_rect().topright))
+def drawScore(game_state):
+    scoreText = game_state.retroFontSmall.render(f"Score: {game_state.score}", True, game_state.TEXTCOLOR)
+    game_state.canvas.blit(scoreText, scoreText.get_rect(topright=game_state.canvas.get_rect().topright))
 
-
-def respawnSnake(snake, gridSize, pixelsPerSquare, startingLength, appleRect, applePadding):
-    snake.clear()
-    global score
-    score = 0
+def respawnSnake(game_state):
+    game_state.snake.clear()
+    game_state.score = 0
     
-    headposx, headposy = math.ceil(gridSize / 2), math.ceil(gridSize / 2)
-    snake.append(snakeclasses.segment(snake, pixelsPerSquare, headposx, headposy, helper.vector(1, 0))) # head of snake
-    for i in range(startingLength - 1): # body
-        snake.append(snakeclasses.segment(snake, pixelsPerSquare))
+    headposx, headposy = math.ceil(game_state.gridSize / 2), math.ceil(game_state.gridSize / 2)
+    game_state.snake.append(snakeclasses.segment(game_state, headposx, headposy, helper.vector(1, 0)))
+    for i in range(game_state.startingLength - 1):
+        game_state.snake.append(snakeclasses.segment(game_state))
     
-    respawnApple(snake, appleRect, applePadding, gridSize, pixelsPerSquare)
+    respawnApple(game_state)
+
+def nextBestMove(board: list[list]):
+    return helper.vector(0, 1)
