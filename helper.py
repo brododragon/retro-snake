@@ -32,7 +32,13 @@ class vector:
         self.y = y
 
     def __repr__(self):
-        return f"({self.x}, {self.y})"
+        return f"vec({self.x}, {self.y})"
 
-    def __tuple__(self):
+    def __tuple__(self): # Doesn't work, says "vector object is not iterable"
         return (self.x, self.y)
+    
+    def __eq__(self, other):
+        return isinstance(other, vector) and self.x == other.x and self.y == other.y
+    
+    def __hash__(self):
+        return hash((self.x, self.y))
