@@ -1,3 +1,4 @@
+# main.py
 import math
 import random
 from multipledispatch import dispatch
@@ -10,212 +11,270 @@ import snakeclasses
 
 pygame.init()
 
-BLACK = pygame.Color(0, 0, 0)
-WHITE = pygame.Color(255, 255, 255)
+class GameState:
+    def __init__(self, width=800, height=600, fullscreen=False):
+        # Screen settings
+        self.width = width
+        self.height = height
+        self.fullscreen = fullscreen
+        
+        # Initialize display
+        if fullscreen:
+            self.canvas = pygame.display.set_mode((0, 0), pygame.FULLSCREEN)
+            self.width = self.canvas.get_width()
+            self.height = self.canvas.get_height()
+        else:
+            self.canvas = pygame.display.set_mode((width, height), pygame.RESIZABLE)
+        
+        # Grid system
+        self.gridSize = 20  # Increased for better scaling
+        self.pixelsPerSquare = min(self.width, self.height) // self.gridSize
+        
+        # Colors
+        self.BLACK = pygame.Color(0, 0, 0)
+        self.WHITE = pygame.Color(255, 255, 255)
+        self.BACKGROUND = (15, 11, 41)
+        self.SNAKECOLOR = pygame.Color(81, 240, 89)
+        self.SNAKECOLOR2 = pygame.Color(7, 100, 250)
+        self.TEXTCOLOR = pygame.Color(160, 217, 235)
+        self.APPLECOLOR = pygame.Color(207, 48, 108)
+        
+        # Game settings
+        self.GRADIENTSNAKE = True
+        self.TICKLENGTH = .25
+        self.TICKKEY = pygame.K_SPACE
+        self.startingLength = 3
+        
+        # Game state
+        self.dead = False
+        self.score = 0
+        self.doTick = False
+        self.t_Old = 0
+        self.deltaTime = 0
+        self.rawInput = None
+        
+        # Debug settings
+        self.doDebugDraw = False
+        self.doTerminalClearing = False
+        
+        # Initialize fonts (scale with screen size)
+        font_size_big = max(24, min(self.width, self.height) // 20)
+        font_size_small = max(12, min(self.width, self.height) // 40)
+        self.retroFontBig = pygame.font.Font("Retro Gaming.ttf", font_size_big)
+        self.retroFontSmall = pygame.font.Font("Retro Gaming.ttf", font_size_small)
+        
+        # Game objects
+        self.snake = []
+        self.turningPoint = []
+        self.inFrontDebugRects = []
+        
+        # Apple setup
+        self.appleSize = .5
+        self.applePadding = (1 - self.appleSize) / 2 * self.pixelsPerSquare
+        self.appleRect = pygame.Rect(0, 0, 
+                                   self.pixelsPerSquare - (self.applePadding * 2), 
+                                   self.pixelsPerSquare - (self.applePadding * 2))
+        
+        # Input mapping
+        self.DIRECTIONDICT = {
+            pygame.K_a: helper.vector(-1, 0),
+            pygame.K_d: helper.vector(1, 0),
+            pygame.K_w: helper.vector(0, -1),
+            pygame.K_s: helper.vector(0, 1),
+            pygame.K_LEFT: helper.vector(-1, 0),
+            pygame.K_RIGHT: helper.vector(1, 0),
+            pygame.K_UP: helper.vector(0, -1),
+            pygame.K_DOWN: helper.vector(0, 1)
+        }
+        
+        # Initialize game
+        snakemethods.respawnSnake(self)
+    
+    def resize_screen(self, new_width, new_height):
+        """Handle screen resize events"""
+        self.width = new_width
+        self.height = new_height
+        self.canvas = pygame.display.set_mode((new_width, new_height), pygame.RESIZABLE)
+        
+        # Recalculate grid and scaling
+        self.pixelsPerSquare = min(self.width, self.height) // self.gridSize
+        
+        # Update apple size
+        self.applePadding = (1 - self.appleSize) / 2 * self.pixelsPerSquare
+        self.appleRect.width = self.pixelsPerSquare - (self.applePadding * 2)
+        self.appleRect.height = self.pixelsPerSquare - (self.applePadding * 2)
+        
+        # Update fonts
+        font_size_big = max(24, min(self.width, self.height) // 20)
+        font_size_small = max(12, min(self.width, self.height) // 40)
+        self.retroFontBig = pygame.font.Font("Retro Gaming.ttf", font_size_big)
+        self.retroFontSmall = pygame.font.Font("Retro Gaming.ttf", font_size_small)
+        
+        # Update snake segment positions
+        for seg in self.snake:
+            seg.rect.width = self.pixelsPerSquare
+            seg.rect.height = self.pixelsPerSquare
+            seg.rect.x = helper.gridToPixels(seg.gridX, self.pixelsPerSquare)
+            seg.rect.y = helper.gridToPixels(seg.gridY, self.pixelsPerSquare)
+        
+        # Respawn apple to ensure it's still valid
+        snakemethods.respawnApple(self)
+    
+    def toggle_fullscreen(self):
+        """Toggle between fullscreen and windowed mode"""
+        self.fullscreen = not self.fullscreen
+        if self.fullscreen:
+            self.canvas = pygame.display.set_mode((0, 0), pygame.FULLSCREEN)
+            self.width = self.canvas.get_width()
+            self.height = self.canvas.get_height()
+        else:
+            self.canvas = pygame.display.set_mode((800, 600), pygame.RESIZABLE)
+            self.width = 800
+            self.height = 600
+        
+        # Recalculate everything for new screen size
+        self.resize_screen(self.width, self.height)
 
-# CREATING CANVAS
-width = height = 500
-canvas = pygame.display.set_mode((width, height))
 
-# use a NxN grid system to make calculations simpler and easy to scale; independent of pixels
-gridSize = 10  # TODO make grid be able to be a non-square; ex. 3x5
-pixelsPerSquare = math.ceil(width / gridSize)
+def moveBodySegments(game_state):
+    turningSegments = {}
+    for ind, seg in enumerate(game_state.snake):
+        seg.move(seg.direction.x, seg.direction.y, game_state.pixelsPerSquare)
 
-
-# TICK STUFF
-TICKLENGTH = .25 # how long between frames, in seconds
-TICKKEY = pygame.K_SPACE # if TICKLENGTH == -1, do tick when this key is pressed
-doTick = False
-t_Old = 0 # get_ticks is how long since the pygame was initialized, basically .old
-deltaTime = 0
-
-# TITLE OF WINDOW
-pygame.display.set_caption("Snake")
-dead = False
-
-
-doDebugDraw = False # Draw debugging shapes?
-
-doTerminalClearing = False # Clear terminal every frame?
-clearTerminal = lambda: os.system('cls' if os.name == 'nt' else 'clear')
-
-
-# COLORS
-BACKGROUND = (15, 11, 41)
-
-GRADIENTSNAKE = True
-SNAKECOLOR = pygame.Color(81, 240, 89)
-SNAKECOLOR2 = pygame.Color(7, 100, 250)
-
-TEXTCOLOR = pygame.Color(160, 217, 235)
-
-# BODY SEGMENTS
-segmentSize = pixelsPerSquare
-snake = []
-startingLength = 3
-turningPoint = []
-
-# TEXT
-retroFontBig = pygame.font.Font("Retro Gaming.ttf", int(width / 8))
-retroFontSmall = pygame.font.Font("Retro Gaming.ttf", int(width / 24))
-
-# death text
-deathText = retroFontBig.render("Game Over", True, TEXTCOLOR)
-
-# retry text
-retryText = retroFontSmall.render("Press any key to retry", True, TEXTCOLOR)
-
-
-DIRECTIONDICT = {
-    pygame.K_a: helper.vector(-1, 0),
-    pygame.K_d: helper.vector(1, 0),
-    pygame.K_w: helper.vector(0, -1),
-    pygame.K_s: helper.vector(0, 1),
-    pygame.K_LEFT: helper.vector(-1, 0),
-    pygame.K_RIGHT: helper.vector(1, 0),
-    pygame.K_UP: helper.vector(0, -1),
-    pygame.K_DOWN: helper.vector(0, 1)
-}
-rawInput = None
-
-def moveBodySegments():
-    turningSegments = {} # change the direction of these segments we should after the for loop. 
-                         # We can't turn during it because that would cause the segments behind it to think th segment was going a different direction
-    for ind, seg in enumerate(snake):
-        seg.move(seg.direction.x, seg.direction.y, pixelsPerSquare)
-
-        # makes a copied snake list without the current segment - we don't want segment to just collide with itself
-        collisionList = snake[:]
+        collisionList = game_state.snake[:]
         collisionList.pop(ind)
 
-        # WARNING - because we remove an element from the list, the index collision gives us will sometimes be INCORRECT
         collision = pygame.Rect.collidelist(seg.rect, collisionList)
         if collision != -1 and collision != ind and collision != len(collisionList) - 1:
-            onDeath(f"hitting your tail")
+            onDeath(game_state, f"hitting your tail")
             return
 
         if ind == 0:
-            if not (0 <= snake[0].gridX < gridSize and 0 <= snake[0].gridY < gridSize): # if the head is out of bounds, we're dead
-                onDeath(f"hitting the wall")
+            if not (0 <= game_state.snake[0].gridX < game_state.gridSize and 0 <= game_state.snake[0].gridY < game_state.gridSize):
+                onDeath(game_state, f"hitting the wall")
                 return
-            if pygame.Rect.collidepoint(seg.rect, (appleRect.x, appleRect.y)):
-                snakemethods.collectApple(snake, appleRect, applePadding, gridSize, pixelsPerSquare)
+            if pygame.Rect.collidepoint(seg.rect, (game_state.appleRect.x, game_state.appleRect.y)):
+                snakemethods.collectApple(game_state)
         else:
             gridInFront = (seg.gridX + seg.direction.x, seg.gridY + seg.direction.y)
-            nextSeg = snake[ind - 1]
+            nextSeg = game_state.snake[ind - 1]
             
-            # draw the rect each seg is testing to see if the snake has turned
             inFrontRect = pygame.Rect(
                 helper.gridToPixelsVec(
                     (seg.gridX + seg.direction.x + 1/4, seg.gridY + seg.direction.y + 1/4),
-                    pixelsPerSquare
+                    game_state.pixelsPerSquare
                 ),
-                (pixelsPerSquare / 2, pixelsPerSquare / 2)
+                (game_state.pixelsPerSquare / 2, game_state.pixelsPerSquare / 2)
             )
 
             if gridInFront != (nextSeg.gridX, nextSeg.gridY):
                 turningSegments[ind] = nextSeg.direction
 
-            inFrontDebugRects.append(inFrontRect)
+            game_state.inFrontDebugRects.append(inFrontRect)
 
     for ind in turningSegments:
-        snake[ind].direction = turningSegments[ind]
+        game_state.snake[ind].direction = turningSegments[ind]
 
-            
 
-def drawBodySegments():
-    for ind, seg in enumerate(snake):
-        if not GRADIENTSNAKE: drawColor = SNAKECOLOR
-        else: drawColor = pygame.Color.lerp(SNAKECOLOR, SNAKECOLOR2, ind / len(snake))
-        pygame.draw.rect(canvas, drawColor, seg.rect)
+def drawBodySegments(game_state):
+    for ind, seg in enumerate(game_state.snake):
+        if not game_state.GRADIENTSNAKE: 
+            drawColor = game_state.SNAKECOLOR
+        else: 
+            drawColor = pygame.Color.lerp(game_state.SNAKECOLOR, game_state.SNAKECOLOR2, ind / len(game_state.snake))
+        pygame.draw.rect(game_state.canvas, drawColor, seg.rect)
 
-def onDeath(cause=None):
-    global dead
-    dead = True
-    
 
+def onDeath(game_state, cause=None):
+    game_state.dead = True
     print("You Died!" if cause == None else f"You died of {cause}!")
+    game_state.snake[0].move(-game_state.snake[0].direction.x, -game_state.snake[0].direction.y, game_state.pixelsPerSquare)
 
-    snake[0].move(-snake[0].direction.x, -snake[0].direction.y, pixelsPerSquare) # kinda sketchy, but its easier to move the head and see if we're colliding (w/ other segs) and then move it back if we are
 
-
-def calcNewInputDirection(keyID, oldDirection):
-    inputDirection = DIRECTIONDICT.get(keyID, oldDirection) # the direction last inputted
-    if not (helper.areOppDirection(inputDirection.x, oldDirection.x) or helper.areOppDirection(inputDirection.y, oldDirection.y)): # make sure the direction inputted is not opposite to the current x or y direction
+def calcNewInputDirection(keyID, oldDirection, game_state):
+    inputDirection = game_state.DIRECTIONDICT.get(keyID, oldDirection)
+    if not (helper.areOppDirection(inputDirection.x, oldDirection.x) or helper.areOppDirection(inputDirection.y, oldDirection.y)):
         newDirection = inputDirection
     else:
         newDirection = oldDirection
-
-    return(newDirection)
-
-# apples and score
-score = 0
-APPLECOLOR = pygame.Color(207, 48, 108)
-appleSize = .5 # percent of size of the grid size
-applePadding = (1 - appleSize) / 2 * pixelsPerSquare
-appleRect = pygame.Rect(0, 0, pixelsPerSquare - (applePadding * 2), pixelsPerSquare - (applePadding * 2))
+    return newDirection
 
 
-snakemethods.respawnSnake(snake, gridSize, pixelsPerSquare, startingLength, appleRect, applePadding)
+def clearTerminal():
+    os.system('cls' if os.name == 'nt' else 'clear')
 
+if __name__ == "__main__":
+    # Initialize game
+    pygame.display.set_caption("Snake")
+    game_state = GameState(600, 600)  # Default size, can be changed
+    clock = pygame.time.Clock()
+    exit = False
 
-clock = pygame.time.Clock()
-exit = False
+    # Draw first frame
+    game_state.canvas.fill(game_state.BACKGROUND)
+    drawBodySegments(game_state)
+    snakemethods.drawApple(game_state)
+    snakemethods.drawScore(game_state)
 
-# draw first frame - don't want to do any movement or calculations yet
-canvas.fill(BACKGROUND)
-drawBodySegments()
-snakemethods.drawApple(canvas, APPLECOLOR, appleRect)
-snakemethods.drawScore(score, retroFontSmall, TEXTCOLOR, canvas)
+    fps = 60
 
-fps = 60
+    while not exit:
+        game_state.inFrontDebugRects = []
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                exit = True
+            
+            elif event.type == pygame.VIDEORESIZE:
+                game_state.resize_screen(event.w, event.h)
 
-while not exit:
-    inFrontDebugRects = [] # put debugging rects in here so we can draw after frame update, emptied after frame update to avoid old debug artifacts
-    for event in pygame.event.get():
-        if event.type == pygame.QUIT:
-            exit = True
+            elif event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_F11:  # Toggle fullscreen with F11
+                    game_state.toggle_fullscreen()
+                elif game_state.dead:
+                    game_state.dead = False
+                    snakemethods.respawnSnake(game_state)
+                else:
+                    if event.key in game_state.DIRECTIONDICT.keys(): 
+                        game_state.rawInput = event.key
+                    if game_state.TICKLENGTH and event.key == game_state.TICKKEY:
+                        game_state.doTick = True
 
-        elif event.type == pygame.KEYDOWN:
-            if dead: # if they hit any key while they are dead, respawn them
-                dead = False
-                snakemethods.respawnSnake(snake, gridSize, pixelsPerSquare, startingLength, appleRect, applePadding)
+        # Calculate deltaTime for next frame
+        t = pygame.time.get_ticks()
+        game_state.deltaTime += (t - game_state.t_Old) / 1000.0
+        game_state.t_Old = t
+        
+        if not game_state.dead and ((game_state.TICKLENGTH == -1 and game_state.doTick) or (game_state.TICKLENGTH >= 0 and game_state.deltaTime >= game_state.TICKLENGTH)):
+            if game_state.TICKLENGTH >= 0: 
+                game_state.deltaTime = 0
+            if game_state.doTick: 
+                game_state.doTick = False
 
-            else:
-                if event.key in DIRECTIONDICT.keys(): rawInput = event.key # log the latest valid 
-                # input so that only the latest valid input is considered,
-                # because we don't want to try and use every input after the previous frame.
-                
-                if TICKLENGTH and event.key == TICKKEY:
-                    doTick = True
+            if game_state.doTerminalClearing: 
+                clearTerminal()
 
-    # Calculate deltaTime for next frame
-    t = pygame.time.get_ticks()
-    deltaTime += (t - t_Old) / 1000.0 # deltaTime in seconds.
-    t_Old = t
-    
-    if not dead and ((TICKLENGTH == -1 and doTick) or (TICKLENGTH >= 0 and deltaTime >= TICKLENGTH)):
-        if TICKLENGTH >= 0: deltaTime = 0
-        if doTick: doTick = False
+            game_state.canvas.fill(game_state.BACKGROUND)
+            game_state.snake[0].direction = calcNewInputDirection(game_state.rawInput, game_state.snake[0].direction, game_state)
+            moveBodySegments(game_state)
+            drawBodySegments(game_state)
+            snakemethods.drawApple(game_state)
+            snakemethods.drawScore(game_state)
+            
+            if game_state.doDebugDraw:
+                for ind, rect in enumerate(game_state.inFrontDebugRects):
+                    if not game_state.GRADIENTSNAKE: 
+                        drawColor = pygame.Color.lerp(game_state.BLACK, game_state.WHITE, ind / len(game_state.inFrontDebugRects))
+                    else: 
+                        drawColor = pygame.Color.lerp(game_state.SNAKECOLOR, game_state.SNAKECOLOR2, (ind + 1) / len(game_state.snake))
+                    pygame.draw.rect(game_state.canvas, drawColor, rect)
+                    
+        elif game_state.dead:
+            deathText = game_state.retroFontBig.render("Game Over", True, game_state.TEXTCOLOR)
+            retryText = game_state.retroFontSmall.render("Press any key to retry", True, game_state.TEXTCOLOR)
+            game_state.canvas.blit(deathText, deathText.get_rect(center=game_state.canvas.get_rect().center))
+            game_state.canvas.blit(retryText, retryText.get_rect(center=game_state.canvas.get_rect().center).move(0, 50))
 
-        if doTerminalClearing: clearTerminal()
+        pygame.display.update()
+        clock.tick(fps)
 
-        canvas.fill(BACKGROUND)
-        snake[0].direction = calcNewInputDirection(rawInput, snake[0].direction)
-        moveBodySegments()
-        drawBodySegments()
-        snakemethods.drawApple(canvas, APPLECOLOR, appleRect)
-        snakemethods.drawScore(score, retroFontSmall, TEXTCOLOR, canvas)
-        if doDebugDraw:
-            for ind, rect in enumerate(inFrontDebugRects):
-                # BW gradient if the snake is monochrome, otherwise use the segment that is drawing the debug rect
-                if not GRADIENTSNAKE: drawColor = pygame.Color.lerp(BLACK, WHITE, ind / len(inFrontDebugRects))
-                else: drawColor = pygame.Color.lerp(SNAKECOLOR, SNAKECOLOR2, (ind + 1) / len(snake))
-
-                pygame.draw.rect(canvas, drawColor, rect)
-    elif dead: # WARNING this repeatedly draws text to the screen without redrawing the canvas - may have ghosting issues in the future
-        canvas.blit(deathText, deathText.get_rect(center = canvas.get_rect().center))
-        canvas.blit(retryText, retryText.get_rect(center = canvas.get_rect().center).move(0, 50))
-
-    pygame.display.update()
-    clock.tick(fps)
+    pygame.quit()
